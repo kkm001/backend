@@ -18,7 +18,7 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://std-check-frontend.vercel.app',
+  origin: process.env.FRONTEND_URL || 'https://backend-tau-nine-75.vercel.app',
   credentials: true
 }));
 
