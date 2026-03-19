@@ -6,22 +6,29 @@ const subjectRoute = Router();
 // CREATE: เพิ่มรายวิชา
 subjectRoute.post("/create-subject", async (req, res) => {
   try {
-    const { course_id, course_name, teacher_name } = req.body;
+    const { course_name, teacher_id, time_check } = req.body;
+    console.log("🚀 ~ req.body:", req.body);
 
     // ตรวจสอบข้อมูล
-    if (!course_id || !course_name || !teacher_name) {
-      return res.status(400).json({
-        error: "กรุณากรอกข้อมูลให้ครบทุกช่อง",
+    if (!course_name || !teacher_id || !time_check) {
+      return res.json({
+        err: "กรุณากรอกข้อมูลให้ครบทุกช่อง",
       });
     }
 
-    const query = `INSERT INTO courses (course_id, course_name, teacher_name) 
+    const teacher = await pool.query(
+      "select fullname from professors where id = $1",
+      [teacher_id],
+    );
+    if (teacher.rows.length < 1) return res.json({ err: "กรุณาเลือกอาจารย์" });
+
+    const query = `INSERT INTO courses (course_name, teacher_name,time_check) 
                    VALUES ($1, $2, $3) RETURNING *`;
 
     const result = await pool.query(query, [
-      course_id,
       course_name,
-      teacher_name,
+      teacher.rows[0].fullname,
+      time_check,
     ]);
 
     res.status(201).json({
@@ -93,21 +100,34 @@ subjectRoute.get("/get-subject/:id", async (req, res) => {
 subjectRoute.put("/update-subject/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { course_name, teacher_name } = req.body;
+    const { course_name, teacher_id, time_check } = req.body;
 
-    // ตรวจสอบข้อมูล
-    if (!course_name || !teacher_name) {
+    if (!course_name || !teacher_id || !time_check) {
       return res.status(400).json({
         error: "กรุณากรอกข้อมูลให้ครบทุกช่อง",
       });
     }
 
+    // ดึงชื่ออาจารย์จาก teacher_id เหมือนกับตอน create
+    const teacher = await pool.query(
+      "SELECT fullname FROM professors WHERE id = $1",
+      [teacher_id]
+    );
+    if (teacher.rows.length < 1) {
+      return res.status(404).json({ error: "ไม่พบอาจารย์" });
+    }
+
     const query = `UPDATE courses 
-                   SET course_name = $1, teacher_name = $2 
-                   WHERE course_id = $3 
+                   SET course_name = $1, teacher_name = $2, time_check = $3
+                   WHERE course_id = $4
                    RETURNING *`;
 
-    const result = await pool.query(query, [course_name, teacher_name, id]);
+    const result = await pool.query(query, [
+      course_name,
+      teacher.rows[0].fullname,
+      time_check,
+      id,
+    ]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
@@ -161,10 +181,12 @@ subjectRoute.get("/get-class-detail/:classId/:stdId", async (req, res) => {
   s.major,
   s.username,
   s.std_class_id,
+  s.profile,
 
   c.course_id,
   c.course_name,
   c.teacher_name,
+  c.time_check,
 
   a.checkin_time,
   a.status
@@ -198,6 +220,34 @@ WHERE student_id = $1
       .json({ data: data.rows, statistics: statistics.rows });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ err: "error" });
+  }
+});
+
+subjectRoute.get("/get-attendance-by-course/:courseId", async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    const result = await pool.query(`
+      SELECT 
+        s.student_id,
+        s.fullname,
+
+        a.status,
+        a.checkin_time,
+        a.leave_file
+
+      FROM students s
+      LEFT JOIN attendance a
+        ON s.student_id = a.student_id
+        AND a.course_id = $1
+        AND DATE(a.checkin_time) = CURRENT_DATE
+    `, [courseId]);
+
+    res.json({ data: result.rows });
+
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ err: "error" });
   }
 });
