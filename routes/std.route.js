@@ -254,37 +254,33 @@ stdRoute.post("/check-class", upload.single("leavDoc"), async (req, res) => {
     
     if (duplicateResult.rows.length > 0) {
       return res.status(400).json({ 
-        err: "คุณเช็คชื่อวันนี้ไปแล้ว ไม่สามารถเช็คชื่อซ้ำได้",
-        alreadyChecked: true,
-        previousStatus: duplicateResult.rows[0].status,
-        checkinTime: duplicateResult.rows[0].checkin_time
+        err: `คุณเช็คชื่อวันนี้ไปแล้ว (สถานะ: ${duplicateResult.rows[0].status}) ไม่สามารถเช็คชื่อซ้ำได้`,
+        alreadyChecked: true
       });
     }
 
-    // 2. ตรวจสอบเวลา (ถ้าต้องการจำกัดเวลาเช็คชื่อ)
-    const currentHour = new Date().getHours();
-    const currentMinute = new Date().getMinutes();
-    
-    // ตัวอย่าง: ให้เช็คชื่อได้แค่ 08:00 - 18:00
+    // 2. ตรวจสอบเวลา 
+    // ⚠️ ปิดการเช็คเวลาชั่วคราวเพื่อให้เทสระบบได้ตลอดเวลา
+    /* const currentHour = new Date().getHours();
     if (currentHour < 8 || currentHour >= 18) {
       return res.status(400).json({ 
-        err: "ไม่อยู่ในช่วงเวลาเช็คชื่อ (08:00 - 18:00)",
-        outsideTime: true
+        err: "ไม่อยู่ในช่วงเวลาเช็คชื่อ (08:00 - 18:00)"
       });
     }
+    */
 
     // 3. บันทึกการเช็คชื่อ
     const insertQuery = `
       INSERT INTO attendance
       (course_id, student_id, checkin_time, status, leave_file)
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4)
       RETURNING *
     `;
 
+    // ใช้ CURRENT_TIMESTAMP ของฐานข้อมูลแทน new Date() ของ JS เพื่อความแม่นยำ
     const result = await pool.query(insertQuery, [
       classId, 
       stdId, 
-      new Date(), 
       status, 
       filePath
     ]);
@@ -301,7 +297,7 @@ stdRoute.post("/check-class", upload.single("leavDoc"), async (req, res) => {
     // ตรวจสอบ error ประเภทต่างๆ
     if (err.code === '23503') {
       return res.status(400).json({ 
-        err: "ไม่พบข้อมูลนักศึกษาหรือรายวิชา" 
+        err: "ไม่พบข้อมูลนักศึกษาหรือรายวิชาในระบบ (ข้อมูลอาจถูกลบไปแล้ว)" 
       });
     }
     
